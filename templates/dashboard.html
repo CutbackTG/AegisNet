@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AegisNet · Anomaly Console</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="page">
+    <header class="navbar">
+        <div class="nav-title">
+            <div class="logo-dot"></div>
+            <div class="nav-title-text">AegisNet · Anomaly Console</div>
+        </div>
+        <div class="nav-badge">
+            Live model · {{ model_device }}
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="grid">
+            <!-- Left: input panel -->
+            <section class="card">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">Flow probe</div>
+                        <div class="card-subtitle">
+                            Manually probe a single network flow
+                        </div>
+                    </div>
+                    {% if last_score is not none %}
+                    <div class="badge-score">
+                        Score: {{ "%.6f" | format(last_score) }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <form method="post" action="/ui/score">
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label for="bytes_in">Bytes in</label>
+                            <input type="number" step="1" min="0"
+                                   id="bytes_in" name="bytes_in"
+                                   value="{{ last_flow.bytes_in
+                                            if last_flow else 1500 }}">
+                        </div>
+                        <div class="form-field">
+                            <label for="bytes_out">Bytes out</label>
+                            <input type="number" step="1" min="0"
+                                   id="bytes_out" name="bytes_out"
+                                   value="{{ last_flow.bytes_out
+                                            if last_flow else 2000 }}">
+                        </div>
+                        <div class="form-field">
+                            <label for="packets">Packets</label>
+                            <input type="number" step="1" min="1"
+                                   id="packets" name="packets"
+                                   value="{{ last_flow.packets
+                                            if last_flow else 25 }}">
+                        </div>
+                        <div class="form-field">
+                            <label for="duration">Duration (s)</label>
+                            <input type="number" step="0.01" min="0"
+                                   id="duration" name="duration"
+                                   value="{{ last_flow.duration
+                                            if last_flow else 0.52 }}">
+                        </div>
+                        <div class="form-field">
+                            <label for="src_port">Source port</label>
+                            <input type="number" step="1" min="0"
+                                   id="src_port" name="src_port"
+                                   value="{{ last_flow.src_port
+                                            if last_flow else 443 }}">
+                        </div>
+                        <div class="form-field">
+                            <label for="dst_port">Destination port</label>
+                            <input type="number" step="1" min="0"
+                                   id="dst_port" name="dst_port"
+                                   value="{{ last_flow.dst_port
+                                            if last_flow else 50321 }}">
+                        </div>
+                        <div class="form-field">
+                            <label for="protocol">Protocol</label>
+                            <select id="protocol" name="protocol">
+                                <option value="6"
+                                    {% if not last_flow
+                                          or last_flow.protocol == 6 %}
+                                          selected{% endif %}>
+                                    TCP (6)
+                                </option>
+                                <option value="17"
+                                    {% if last_flow and last_flow.protocol == 17 %}
+                                        selected{% endif %}>
+                                    UDP (17)
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="reset"
+                                class="btn-secondary">Reset</button>
+                        <button type="submit"
+                                class="btn-primary">Analyse flow</button>
+                    </div>
+                </form>
+
+                {% if last_score is not none %}
+                <div style="margin-top:1rem; position:relative; z-index:1;">
+                    {% if last_is_suspicious %}
+                    <span class="badge-status badge-suspicious">
+                        Suspicious · investigation advised
+                    </span>
+                    {% else %}
+                    <span class="badge-status badge-ok">
+                        Within learned baseline
+                    </span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- Right: recent results -->
+            <section class="card">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">Recent probes</div>
+                        <div class="card-subtitle">
+                            Latest flows scored via this console
+                        </div>
+                    </div>
+                    <div class="card-subtitle">
+                        {{ results|length }} entries
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Score</th>
+                            <th>Status</th>
+                            <th>Src</th>
+                            <th>Dst</th>
+                            <th>Bytes</th>
+                            <th>Pkts</th>
+                            <th>Dur</th>
+                            <th>Proto</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for r in results %}
+                        <tr>
+                            {% set s = r.score %}
+                            <td>
+                                <span
+                                  class="
+                                    {% if s > 0.2 %}score-high{% elif
+                                           s > 0.05 %}score-medium{% else %}
+                                           score-low{% endif %}
+                                  ">
+                                    {{ "%.6f" | format(s) }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if r.is_suspicious %}
+                                <span class="badge-status badge-suspicious">
+                                    Suspicious
+                                </span>
+                                {% else %}
+                                <span class="badge-status badge-ok">
+                                    Normal
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {{ r.flow.src_port }}
+                            </td>
+                            <td class="small">
+                                {{ r.flow.dst_port }}
+                            </td>
+                            <td class="small">
+                                {{ r.flow.bytes_in }}/{{ r.flow.bytes_out }}
+                            </td>
+                            <td class="small">
+                                {{ r.flow.packets }}
+                            </td>
+                            <td class="small">
+                                {{ "%.2f" | format(r.flow.duration) }}
+                            </td>
+                            <td class="small">
+                                {{ r.flow.protocol }}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="small">
+                                No flows scored yet. Use the probe panel
+                                on the left to analyse a flow.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <footer class="footer">
+        AegisNet · Neural anomaly console · Local demo instance
+    </footer>
+</div>
+</body>
+</html>

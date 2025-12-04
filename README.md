@@ -6,7 +6,7 @@ It uses an autoencoder to score network flow behaviour in real time, helping det
 
 ---
 
-## 🚀 Features
+## Features
 - **Autoencoder-Based Anomaly Detection**  
   Learns normal network behaviour and scores deviations.
 
@@ -53,59 +53,61 @@ AegisNet/
 ```bash
 git clone https://github.com/CutbackTG/AegisNet.git
 cd AegisNet
+```
 
 2. Create a virtual environment
+```bash
 python -m venv .venv
+```
 
 3. Activate it
 
 Windows (PowerShell):
-
+```bash
 .\.venv\Scripts\Activate.ps1
-
+```
 
 macOS/Linux:
-
+```bash
 source .venv/bin/activate
+```
 
 4. Install dependencies
+```bash
 pip install -r requirements.txt
+```
 
-🤖 Training the Autoencoder
+## Training the Autoencoder
 
 To train a fresh AegisNet model:
 
 python train_autoencoder.py
 
-
 This will generate:
-
 autoencoder.pt
 
-
 Which contains:
-
 Model weights
-
 Feature list
-
 Normalization mean & std
-
 Input dimensions
 
-⚡ Running the Inference Server
+## Running the Inference Server
 
 Start the backend + dashboard:
 
 uvicorn inference_service:app --reload --port 8000
 
 
-Open the dashboard:
-
+## Open the dashboard:
+```bash
 http://127.0.0.1:8000
+```
 
-🛰️ REST API Usage
+## REST API Usage
+
 Score a single flow
+```bash
 curl -X POST http://127.0.0.1:8000/score \
   -H "Content-Type: application/json" \
   -d "{\"features\": {
@@ -117,17 +119,20 @@ curl -X POST http://127.0.0.1:8000/score \
     \"dst_port\": 52213,
     \"protocol\": 6
   }}"
-
-Score multiple flows
+  ```
+## Score multiple flows
+```bash
 curl -X POST http://127.0.0.1:8000/score_bulk \
   -H "Content-Type: application/json" \
   -d "{\"flows\": [...]}"
+  ```
 
-🖥️ Dashboard Screenshot
+## Dashboard Screenshot
 
-(Insert your screenshot here)
+(Insert screenshot here)
 
-🧩 Architecture Overview
+## Achitecture Overview
+
 1. Autoencoder (PyTorch)
 
 Learns normal flow behaviour.
@@ -136,9 +141,7 @@ Anomaly = high reconstruction error.
 2. Anomaly Scorer
 
 Loads model
-
 Applies normalization
-
 Computes anomaly scores
 
 3. FastAPI Inference Server
@@ -146,45 +149,35 @@ Computes anomaly scores
 Routes:
 
 /score
-
 /score_bulk
-
 / UI dashboard
-
 /ui/score GUI form submit
 
 4. Flow Agent
 
 Optional background agent for real-time local monitoring.
 
-📌 Configuration
+## Configuration
 
 You can adjust:
-
 Suspicious threshold (default 0.05)
-
 Feature set
-
 Dashboard layout
-
 Flow agent behaviour
 
-🛡️ Security Notice
+## Security Notice
 
 AegisNet is currently a prototype.
 Before production use, add:
 
-Authentication
+## Authentication
 
 TLS
-
 Logging & audit trails
-
 Replay protection
-
 Robust error handling
 
-🤝 Contributing
+## Contributing
 
 Fork the repo
 
@@ -194,6 +187,6 @@ Commit clean changes
 
 Open a pull request
 
-📜 License
+## License
 
 MIT License recommended.

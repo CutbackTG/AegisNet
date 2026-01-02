@@ -143,10 +143,13 @@
                 {% endfor %}
 
                 {% if ns.alerts > 0 %}
-                <div style="margin: 0 1rem 0.75rem 1rem;">
-                    <span class="badge-status badge-suspicious">
-                        Active alerts: {{ ns.alerts }} (last {{ results|length }})
-                    </span>
+                <div class="alert-banner">
+                    <div class="alert-title">
+                        Active alerts: {{ ns.alerts }}
+                    </div>
+                    <div class="alert-meta">
+                        last {{ results|length }} events
+                    </div>
                 </div>
                 {% endif %}
 
@@ -195,7 +198,13 @@
 
                             <td class="small">
                                 {% if r.flow.threat_label %}
-                                    {{ r.flow.threat_label }}
+                                    {% set c = r.flow.threat_confidence or 0 %}
+                                    <span class="threat-chip
+                                      {% if c >= 0.75 %}threat-high
+                                      {% elif c >= 0.55 %}threat-med
+                                      {% else %}threat-low{% endif %}">
+                                        {{ r.flow.threat_label }}
+                                    </span>
                                 {% else %}
                                     —
                                 {% endif %}
@@ -203,7 +212,9 @@
 
                             <td class="small">
                                 {% if r.flow.threat_confidence is not none %}
-                                    {{ "%.2f" | format(r.flow.threat_confidence) }}
+                                    <span class="conf-pill">
+                                        {{ "%.2f" | format(r.flow.threat_confidence) }}
+                                    </span>
                                 {% else %}
                                     —
                                 {% endif %}

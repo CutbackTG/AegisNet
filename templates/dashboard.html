@@ -134,12 +134,30 @@
                     </div>
                 </div>
 
+                {# Active alert banner if any of the recent entries has a threat label #}
+                {% set ns = namespace(alerts=0) %}
+                {% for r in results %}
+                    {% if r.flow.threat_label %}
+                        {% set ns.alerts = ns.alerts + 1 %}
+                    {% endif %}
+                {% endfor %}
+
+                {% if ns.alerts > 0 %}
+                <div style="margin: 0 1rem 0.75rem 1rem;">
+                    <span class="badge-status badge-suspicious">
+                        Active alerts: {{ ns.alerts }} (last {{ results|length }})
+                    </span>
+                </div>
+                {% endif %}
+
                 <div class="table-wrapper">
                     <table>
                         <thead>
                         <tr>
                             <th>Score</th>
                             <th>Status</th>
+                            <th>Threat</th>
+                            <th>Conf</th>
                             <th>Src</th>
                             <th>Dst</th>
                             <th>Bytes</th>
@@ -162,6 +180,7 @@
                                     {{ "%.6f" | format(s) }}
                                 </span>
                             </td>
+
                             <td>
                                 {% if r.is_suspicious %}
                                 <span class="badge-status badge-suspicious">
@@ -173,28 +192,58 @@
                                 </span>
                                 {% endif %}
                             </td>
+
                             <td class="small">
-                                {{ r.flow.src_port }}
+                                {% if r.flow.threat_label %}
+                                    {{ r.flow.threat_label }}
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
+
                             <td class="small">
-                                {{ r.flow.dst_port }}
+                                {% if r.flow.threat_confidence is not none %}
+                                    {{ "%.2f" | format(r.flow.threat_confidence) }}
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
+
+                            <td class="small">
+                                {% if r.flow.src_ip %}
+                                    {{ r.flow.src_ip }}
+                                {% else %}
+                                    {{ r.flow.src_port }}
+                                {% endif %}
+                            </td>
+
+                            <td class="small">
+                                {% if r.flow.dst_ip %}
+                                    {{ r.flow.dst_ip }}
+                                {% else %}
+                                    {{ r.flow.dst_port }}
+                                {% endif %}
+                            </td>
+
                             <td class="small">
                                 {{ r.flow.bytes_in }}/{{ r.flow.bytes_out }}
                             </td>
+
                             <td class="small">
                                 {{ r.flow.packets }}
                             </td>
+
                             <td class="small">
                                 {{ "%.2f" | format(r.flow.duration) }}
                             </td>
+
                             <td class="small">
                                 {{ r.flow.protocol }}
                             </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="small">
+                            <td colspan="10" class="small">
                                 No flows scored yet. Use the probe panel
                                 on the left to analyse a flow.
                             </td>

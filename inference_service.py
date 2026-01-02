@@ -1,14 +1,17 @@
-from collections import deque
-from typing import Deque, Dict, List
+from __future__ import annotations
 
-from fastapi import FastAPI, Request, Form
+from collections import deque
+from typing import Any, Deque, Dict, List
+
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from anomaly_scorer import AnomalyScorer
-
+from schemas import IngestEvent
+from threat_classifier import ThreatClassifier
 
 app = FastAPI(title="AegisNet Anomaly Scoring API")
 
@@ -18,7 +21,9 @@ templates = Jinja2Templates(directory="templates")
 scorer: AnomalyScorer | None = None
 
 MAX_RECENT = 64
-recent_results: Deque[Dict] = deque(maxlen=MAX_RECENT)
+recent_results: Deque[Dict[str, Any]] = deque(maxlen=MAX_RECENT)
+
+threats = ThreatClassifier(window_s=30)
 
 
 class FlowFeatures(BaseModel):
@@ -36,8 +41,7 @@ def load_model() -> None:
     print("[OK] Model loaded")
 
 
-def _log_result(flow: Dict[str, float], score: float,
-                is_suspicious: bool) -> None:
+def _log_result(flow: Dict[str, Any], score: float, is_suspicious: bool) -> None:
     recent_results.appendleft(
         {
             "flow": flow,
@@ -47,13 +51,19 @@ def _log_result(flow: Dict[str, float], score: float,
     )
 
 
+def _meta_to_dict(meta_obj: Any) -> Dict[str, Any]:
+    """
+    Support both Pydantic v2 (model_dump) and v1 (dict).
+    """
+    if hasattr(meta_obj, "model_dump"):
+        return meta_obj.model_dump()
+    return meta_obj.dict()  # type: ignore[no-any-return]
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
-    device = "unknown"
-    if scorer is not None:
-        device = scorer.device
-
+    device = scorer.device if scorer is not None else "unknown"
     last = recent_results[0] if recent_results else None
 
     context = {
@@ -94,10 +104,9 @@ async def ui_score(
     is_suspicious = score > 0.05
     _log_result(flow, score, is_suspicious)
 
-    device = scorer.device
     context = {
         "request": request,
-        "model_device": device,
+        "model_device": scorer.device,
         "results": list(recent_results),
         "last_score": score,
         "last_is_suspicious": is_suspicious,
@@ -107,8 +116,9 @@ async def ui_score(
 
 
 @app.post("/score")
-def score_flow(flow: FlowFeatures):
+def score_flow(flow: FlowFeatures) -> Dict[str, Any]:
     assert scorer is not None
+
     score = scorer.score(flow.features)
     is_suspicious = score > 0.05
 
@@ -121,11 +131,12 @@ def score_flow(flow: FlowFeatures):
 
 
 @app.post("/score_bulk")
-def score_flows(batch: FlowBatch):
+def score_flows(batch: FlowBatch) -> Dict[str, Any]:
     assert scorer is not None
 
     scores = scorer.score_batch(batch.flows)
-    results = []
+    results: List[Dict[str, Any]] = []
+
     for idx, (flow, score) in enumerate(zip(batch.flows, scores)):
         is_suspicious = score > 0.05
         _log_result(flow, score, is_suspicious)
@@ -138,3 +149,49 @@ def score_flows(batch: FlowBatch):
         )
 
     return {"results": results}
+
+
+@app.post("/ingest")
+def ingest(event: IngestEvent) -> Dict[str, Any]:
+    assert scorer is not None
+
+    score = scorer.score(event.features)
+    is_suspicious = score > 0.05
+
+    meta = _meta_to_dict(event.meta)
+
+    verdict = threats.update(
+        meta=meta,
+        features=event.features,
+        anomaly_score=score,
+    )
+
+    payload: Dict[str, Any] = {
+        "anomaly_score": score,
+        "is_suspicious": is_suspicious,
+        "threat": None,
+    }
+
+    if verdict is not None:
+        payload["threat"] = {
+            "label": verdict.label,
+            "confidence": verdict.confidence,
+            "reason": verdict.reason,
+        }
+
+    log_item: Dict[str, Any] = dict(event.features)
+
+    src_ip = getattr(event.meta, "src_ip", None)
+    dst_ip = getattr(event.meta, "dst_ip", None)
+
+    if src_ip:
+        log_item["src_ip"] = src_ip
+    if dst_ip:
+        log_item["dst_ip"] = dst_ip
+
+    if verdict is not None:
+        log_item["threat_label"] = verdict.label
+        log_item["threat_confidence"] = verdict.confidence
+
+    _log_result(log_item, score, is_suspicious)
+    return payload

@@ -137,7 +137,8 @@
                 {# Active alert banner if any of the recent entries has a threat label #}
                 {% set ns = namespace(alerts=0) %}
                 {% for r in results %}
-                    {% if r.flow.threat_label %}
+                    {% set flow = r.get("flow", {}) %}
+                    {% if flow.get("threat_label") %}
                         {% set ns.alerts = ns.alerts + 1 %}
                     {% endif %}
                 {% endfor %}
@@ -171,21 +172,24 @@
                         </thead>
                         <tbody>
                         {% for r in results %}
+                        {% set flow = r.get("flow", {}) %}
+                        {% set s = r.get("score", 0.0) %}
+                        {% set suspicious = r.get("is_suspicious", false) %}
+                        {% set label = flow.get("threat_label") %}
+                        {% set conf = flow.get("threat_confidence") %}
                         <tr>
-                            {% set s = r.score %}
                             <td>
-                                <span
-                                  class="
+                                <span class="
                                     {% if s > 0.2 %}score-high{% elif
                                            s > 0.05 %}score-medium{% else %}
                                            score-low{% endif %}
-                                  ">
+                                ">
                                     {{ "%.6f" | format(s) }}
                                 </span>
                             </td>
 
                             <td>
-                                {% if r.is_suspicious %}
+                                {% if suspicious %}
                                 <span class="badge-status badge-suspicious">
                                     Suspicious
                                 </span>
@@ -197,13 +201,13 @@
                             </td>
 
                             <td class="small">
-                                {% if r.flow.threat_label %}
-                                    {% set c = r.flow.threat_confidence or 0 %}
+                                {% if label %}
+                                    {% set c = conf if conf is not none else 0 %}
                                     <span class="threat-chip
                                       {% if c >= 0.75 %}threat-high
                                       {% elif c >= 0.55 %}threat-med
                                       {% else %}threat-low{% endif %}">
-                                        {{ r.flow.threat_label }}
+                                        {{ label }}
                                     </span>
                                 {% else %}
                                     —
@@ -211,9 +215,9 @@
                             </td>
 
                             <td class="small">
-                                {% if r.flow.threat_confidence is not none %}
+                                {% if conf is not none %}
                                     <span class="conf-pill">
-                                        {{ "%.2f" | format(r.flow.threat_confidence) }}
+                                        {{ "%.2f" | format(conf) }}
                                     </span>
                                 {% else %}
                                     —
@@ -221,35 +225,39 @@
                             </td>
 
                             <td class="small">
-                                {% if r.flow.src_ip %}
-                                    {{ r.flow.src_ip }}
+                                {% if flow.get("src_ip") %}
+                                    {{ flow.get("src_ip") }}
                                 {% else %}
-                                    {{ r.flow.src_port }}
+                                    {{ flow.get("src_port", "—") }}
                                 {% endif %}
                             </td>
 
                             <td class="small">
-                                {% if r.flow.dst_ip %}
-                                    {{ r.flow.dst_ip }}
+                                {% if flow.get("dst_ip") %}
+                                    {{ flow.get("dst_ip") }}
                                 {% else %}
-                                    {{ r.flow.dst_port }}
+                                    {{ flow.get("dst_port", "—") }}
                                 {% endif %}
                             </td>
 
                             <td class="small">
-                                {{ r.flow.bytes_in }}/{{ r.flow.bytes_out }}
+                                {{ flow.get("bytes_in", "—") }}/{{ flow.get("bytes_out", "—") }}
                             </td>
 
                             <td class="small">
-                                {{ r.flow.packets }}
+                                {{ flow.get("packets", "—") }}
                             </td>
 
                             <td class="small">
-                                {{ "%.2f" | format(r.flow.duration) }}
+                                {% if flow.get("duration") is not none %}
+                                    {{ "%.2f" | format(flow.get("duration")) }}
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
 
                             <td class="small">
-                                {{ r.flow.protocol }}
+                                {{ flow.get("protocol", "—") }}
                             </td>
                         </tr>
                         {% else %}

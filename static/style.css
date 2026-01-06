@@ -395,3 +395,8 @@ th.small {
 .badge-suspicious {
     box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.08);
 }
+
+.table-wrapper {
+    max-height: 520px;   /* pick what looks good */
+    overflow-y: auto;
+}

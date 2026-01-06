@@ -130,31 +130,16 @@
                         </div>
                     </div>
                     <div class="card-subtitle">
-                        {{ results|length }} entries
+                        <span id="entryCount">{{ results|length }}</span> entries
                     </div>
                 </div>
 
-                {# Active alert banner if any of the recent entries has a threat label #}
-                {% set ns = namespace(alerts=0) %}
-                {% for r in results %}
-                    {% set flow = r.get("flow", {}) %}
-                    {% if flow.get("threat_label") %}
-                        {% set ns.alerts = ns.alerts + 1 %}
-                    {% endif %}
-                {% endfor %}
-
-                {% if ns.alerts > 0 %}
-                <div class="alert-banner">
-                    <div class="alert-title">
-                        Active alerts: {{ ns.alerts }}
-                    </div>
-                    <div class="alert-meta">
-                        last {{ results|length }} events
-                    </div>
+                <div id="alertBanner" class="alert-banner" style="display:none;">
+                    <div class="alert-title" id="alertTitle">Active alerts: 0</div>
+                    <div class="alert-meta" id="alertMeta">last 0 events</div>
                 </div>
-                {% endif %}
 
-                <div class="table-wrapper">
+                <div class="table-wrapper" id="logWrapper">
                     <table>
                         <thead>
                         <tr>
@@ -170,7 +155,7 @@
                             <th>Proto</th>
                         </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="logBody">
                         {% for r in results %}
                         {% set flow = r.get("flow", {}) %}
                         {% set s = r.get("score", 0.0) %}
@@ -180,14 +165,12 @@
                         <tr>
                             <td>
                                 <span class="
-                                    {% if s > 0.2 %}score-high{% elif
-                                           s > 0.05 %}score-medium{% else %}
-                                           score-low{% endif %}
+                                    {% if s > 0.2 %}score-high{% elif s > 0.05 %}
+                                        score-medium{% else %}score-low{% endif %}
                                 ">
                                     {{ "%.6f" | format(s) }}
                                 </span>
                             </td>
-
                             <td>
                                 {% if suspicious %}
                                 <span class="badge-status badge-suspicious">
@@ -199,7 +182,6 @@
                                 </span>
                                 {% endif %}
                             </td>
-
                             <td class="small">
                                 {% if label %}
                                     {% set c = conf if conf is not none else 0 %}
@@ -213,17 +195,13 @@
                                     —
                                 {% endif %}
                             </td>
-
                             <td class="small">
                                 {% if conf is not none %}
-                                    <span class="conf-pill">
-                                        {{ "%.2f" | format(conf) }}
-                                    </span>
+                                    <span class="conf-pill">{{ "%.2f" | format(conf) }}</span>
                                 {% else %}
                                     —
                                 {% endif %}
                             </td>
-
                             <td class="small">
                                 {% if flow.get("src_ip") %}
                                     {{ flow.get("src_ip") }}
@@ -231,7 +209,6 @@
                                     {{ flow.get("src_port", "—") }}
                                 {% endif %}
                             </td>
-
                             <td class="small">
                                 {% if flow.get("dst_ip") %}
                                     {{ flow.get("dst_ip") }}
@@ -239,15 +216,10 @@
                                     {{ flow.get("dst_port", "—") }}
                                 {% endif %}
                             </td>
-
                             <td class="small">
                                 {{ flow.get("bytes_in", "—") }}/{{ flow.get("bytes_out", "—") }}
                             </td>
-
-                            <td class="small">
-                                {{ flow.get("packets", "—") }}
-                            </td>
-
+                            <td class="small">{{ flow.get("packets", "—") }}</td>
                             <td class="small">
                                 {% if flow.get("duration") is not none %}
                                     {{ "%.2f" | format(flow.get("duration")) }}
@@ -255,21 +227,24 @@
                                     —
                                 {% endif %}
                             </td>
-
-                            <td class="small">
-                                {{ flow.get("protocol", "—") }}
-                            </td>
+                            <td class="small">{{ flow.get("protocol", "—") }}</td>
                         </tr>
                         {% else %}
                         <tr>
                             <td colspan="10" class="small">
-                                No flows scored yet. Use the probe panel
-                                on the left to analyse a flow.
+                                No flows scored yet. Use the probe panel on the left
+                                to analyse a flow.
                             </td>
                         </tr>
                         {% endfor %}
                         </tbody>
                     </table>
+                </div>
+
+                <div style="margin-top:0.8rem; display:flex; gap:0.6rem; justify-content:flex-end;">
+                    <button id="jumpBtn" class="btn-secondary" type="button" style="display:none;">
+                        Jump to latest
+                    </button>
                 </div>
             </section>
         </div>
@@ -279,5 +254,162 @@
         AegisNet · Neural anomaly console · Local demo instance
     </footer>
 </div>
+
+<script>
+(function () {
+    const wrapper = document.getElementById("logWrapper");
+    const tbody = document.getElementById("logBody");
+
+    const entryCountEl = document.getElementById("entryCount");
+    const alertBanner = document.getElementById("alertBanner");
+    const alertTitle = document.getElementById("alertTitle");
+    const alertMeta = document.getElementById("alertMeta");
+
+    const jumpBtn = document.getElementById("jumpBtn");
+
+    const POLL_MS = 750;
+    const LIMIT = 64;
+    const NEAR_BOTTOM_PX = 40;
+
+    function isNearBottom(el) {
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) < NEAR_BOTTOM_PX;
+    }
+
+    function escapeHtml(s) {
+        return String(s)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    function scoreClass(score) {
+        if (score > 0.2) return "score-high";
+        if (score > 0.05) return "score-medium";
+        return "score-low";
+    }
+
+    function threatChip(label, conf) {
+        if (!label) return "—";
+        const c = (conf === undefined || conf === null) ? 0 : Number(conf);
+        const sev = c >= 0.75 ? "threat-high" : c >= 0.55 ? "threat-med" : "threat-low";
+        return `<span class="threat-chip ${sev}">${escapeHtml(label)}</span>`;
+    }
+
+    function confPill(conf) {
+        if (conf === undefined || conf === null) return "—";
+        return `<span class="conf-pill">${Number(conf).toFixed(2)}</span>`;
+    }
+
+    function statusBadge(isSuspicious) {
+        if (isSuspicious) {
+            return '<span class="badge-status badge-suspicious">Suspicious</span>';
+        }
+        return '<span class="badge-status badge-ok">Normal</span>';
+    }
+
+    function rowHtml(r) {
+        const flow = r.flow || {};
+        const score = Number(r.score || 0);
+        const suspicious = Boolean(r.is_suspicious);
+
+        const label = flow.threat_label || null;
+        const conf = flow.threat_confidence;
+
+        const src = flow.src_ip ? escapeHtml(flow.src_ip) : escapeHtml(flow.src_port ?? "—");
+        const dst = flow.dst_ip ? escapeHtml(flow.dst_ip) : escapeHtml(flow.dst_port ?? "—");
+        const bytes = `${escapeHtml(flow.bytes_in ?? "—")}/${escapeHtml(flow.bytes_out ?? "—")}`;
+        const pkts = escapeHtml(flow.packets ?? "—");
+        const dur = (flow.duration === undefined || flow.duration === null) ? "—" : Number(flow.duration).toFixed(2);
+        const proto = escapeHtml(flow.protocol ?? "—");
+
+        return `
+            <tr>
+                <td><span class="${scoreClass(score)}">${score.toFixed(6)}</span></td>
+                <td>${statusBadge(suspicious)}</td>
+                <td class="small">${threatChip(label, conf)}</td>
+                <td class="small">${confPill(conf)}</td>
+                <td class="small">${src}</td>
+                <td class="small">${dst}</td>
+                <td class="small">${bytes}</td>
+                <td class="small">${pkts}</td>
+                <td class="small">${dur}</td>
+                <td class="small">${proto}</td>
+            </tr>
+        `;
+    }
+
+    function emptyHtml() {
+        return `
+            <tr>
+                <td colspan="10" class="small">
+                    No flows scored yet. Use the probe panel on the left
+                    to analyse a flow.
+                </td>
+            </tr>
+        `;
+    }
+
+    function updateAlertBanner(results) {
+        let alerts = 0;
+        for (const r of results) {
+            const flow = r.flow || {};
+            if (flow.threat_label) alerts += 1;
+        }
+
+        if (alerts > 0) {
+            alertBanner.style.display = "flex";
+            alertTitle.textContent = `Active alerts: ${alerts}`;
+            alertMeta.textContent = `last ${results.length} events`;
+        } else {
+            alertBanner.style.display = "none";
+        }
+    }
+
+    async function poll() {
+        try {
+            const shouldStick = isNearBottom(wrapper);
+
+            const res = await fetch(`/api/recent?limit=${LIMIT}`, {
+                cache: "no-store"
+            });
+            if (!res.ok) return;
+
+            const data = await res.json();
+            const results = data.results || [];
+
+            entryCountEl.textContent = String(results.length);
+            updateAlertBanner(results);
+
+            const html = results.length ? results.map(rowHtml).join("") : emptyHtml();
+            tbody.innerHTML = html;
+
+            if (shouldStick) {
+                wrapper.scrollTop = wrapper.scrollHeight;
+                jumpBtn.style.display = "none";
+            } else {
+                jumpBtn.style.display = "inline-flex";
+            }
+        } catch (e) {
+            // Keep UI usable even if API hiccups
+        }
+    }
+
+    jumpBtn.addEventListener("click", function () {
+        wrapper.scrollTop = wrapper.scrollHeight;
+        jumpBtn.style.display = "none";
+    });
+
+    wrapper.addEventListener("scroll", function () {
+        if (isNearBottom(wrapper)) {
+            jumpBtn.style.display = "none";
+        }
+    });
+
+    setInterval(poll, POLL_MS);
+    poll();
+})();
+</script>
 </body>
 </html>

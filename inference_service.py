@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from anomaly_scorer import AnomalyScorer
 from schemas import IngestEvent
 from threat_classifier import ThreatClassifier
+from fastapi import Query
 
 app = FastAPI(title="AegisNet Anomaly Scoring API")
 
@@ -195,3 +196,9 @@ def ingest(event: IngestEvent) -> Dict[str, Any]:
 
     _log_result(log_item, score, is_suspicious)
     return payload
+
+
+@app.get("/api/recent")
+def api_recent(limit: int = Query(default=64, ge=1, le=256)):
+    items = list(recent_results)[:limit]
+    return {"results": items}

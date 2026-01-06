@@ -1,3 +1,4 @@
+import random
 import socket
 import time
 from typing import Dict, Optional
@@ -8,6 +9,9 @@ import requests
 
 API_URL = "http://127.0.0.1:8000/ingest"
 INTERVAL = 0.2  # seconds
+
+MAX_CONNECTIONS_PER_TICK = 25  # prevents spamming the API
+TIMEOUT_S = 0.5
 
 
 def _hostname() -> str:
@@ -26,10 +30,26 @@ def _safe_process_name(pid: Optional[int]) -> Optional[str]:
         return None
 
 
+def _get_active_tcp_connections():
+    # net_connections can be costly; keep it isolated for easy tuning later.
+    conns = psutil.net_connections(kind="tcp")
+    active = [
+        c for c in conns
+        if c.raddr and c.status == psutil.CONN_ESTABLISHED
+    ]
+    return active
+
+
 def collect_and_send() -> None:
     agent_id = _hostname()
     prev_net = psutil.net_io_counters()
     prev_time = time.time()
+
+    session = requests.Session()
+
+    sent_total = 0
+    dropped_total = 0
+    bad_status_total = 0
 
     print(f"[Agent] Started. Interval={INTERVAL}s -> {API_URL}")
     print(f"[Agent] agent_id={agent_id}")
@@ -52,22 +72,23 @@ def collect_and_send() -> None:
 
         prev_net = net
 
-        conns = psutil.net_connections(kind="tcp")
-        active = [
-            c for c in conns
-            if c.raddr and c.status == psutil.CONN_ESTABLISHED
-        ]
+        try:
+            active = _get_active_tcp_connections()
+        except Exception:
+            dropped_total += 1
+            continue
 
         if not active:
             continue
 
-        per_in = float(delta_in) / len(active) if delta_in > 0 else 0.0
-        per_out = float(delta_out) / len(active) if delta_out > 0 else 0.0
-        per_pk = (
-            float(delta_packets) / len(active)
-            if delta_packets > 0
-            else 0.0
-        )
+        # Cap connections per tick to avoid overwhelming the API
+        if len(active) > MAX_CONNECTIONS_PER_TICK:
+            active = random.sample(active, MAX_CONNECTIONS_PER_TICK)
+
+        n = len(active)
+        per_in = float(delta_in) / n if delta_in > 0 else 0.0
+        per_out = float(delta_out) / n if delta_out > 0 else 0.0
+        per_pk = float(delta_packets) / n if delta_packets > 0 else 0.0
 
         for c in active:
             src_ip = getattr(c.laddr, "ip", None)
@@ -90,9 +111,9 @@ def collect_and_send() -> None:
                     "timestamp": now,
                 },
                 "features": {
-                    "bytes_in": per_in,
-                    "bytes_out": per_out,
-                    "packets": per_pk,
+                    "bytes_in": float(per_in),
+                    "bytes_out": float(per_out),
+                    "packets": float(per_pk),
                     "duration": float(elapsed),
                     "src_port": float(src_port),
                     "dst_port": float(dst_port),
@@ -101,15 +122,22 @@ def collect_and_send() -> None:
             }
 
             try:
-                resp = requests.post(API_URL, json=payload, timeout=0.5)
+                resp = session.post(API_URL, json=payload, timeout=TIMEOUT_S)
+                sent_total += 1
+
                 if resp.status_code != 200:
-                    print(
-                        "[Agent] /ingest returned",
-                        resp.status_code,
-                    )
+                    bad_status_total += 1
             except Exception:
-                # Ignore failures (server might not be ready or restarting)
-                pass
+                dropped_total += 1
+
+        # Lightweight heartbeat every ~5s so you know it's alive
+        if sent_total and (sent_total % 250 == 0):
+            print(
+                f"[Agent] sent={sent_total} "
+                f"bad_status={bad_status_total} "
+                f"dropped={dropped_total} "
+                f"active_sampled={n}"
+            )
 
 
 def main() -> None:

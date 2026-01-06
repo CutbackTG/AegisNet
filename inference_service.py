@@ -1,10 +1,10 @@
-from __future__ import annotations
-
+import asyncio
+import json
 from collections import deque
-from typing import Any, Deque, Dict, List
+from typing import Any, Deque, Dict, List, Optional
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, Query, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -12,19 +12,21 @@ from pydantic import BaseModel
 from anomaly_scorer import AnomalyScorer
 from schemas import IngestEvent
 from threat_classifier import ThreatClassifier
-from fastapi import Query
+
 
 app = FastAPI(title="AegisNet Anomaly Scoring API")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-scorer: AnomalyScorer | None = None
+scorer: Optional[AnomalyScorer] = None
+
+threats = ThreatClassifier(window_s=30)
 
 MAX_RECENT = 64
 recent_results: Deque[Dict[str, Any]] = deque(maxlen=MAX_RECENT)
 
-threats = ThreatClassifier(window_s=30)
+subscribers: List[asyncio.Queue] = []
 
 
 class FlowFeatures(BaseModel):
@@ -42,44 +44,88 @@ def load_model() -> None:
     print("[OK] Model loaded")
 
 
+def _sse_payload(item: Dict[str, Any]) -> str:
+    return f"data: {json.dumps(item)}\n\n"
+
+
+async def _broadcast(item: Dict[str, Any]) -> None:
+    dead: List[asyncio.Queue] = []
+    for q in subscribers:
+        try:
+            q.put_nowait(item)
+        except Exception:
+            dead.append(q)
+
+    for q in dead:
+        if q in subscribers:
+            subscribers.remove(q)
+
+
 def _log_result(
     flow: Dict[str, Any],
     score: float,
     is_suspicious: bool,
 ) -> None:
-    recent_results.appendleft(
-        {
-            "flow": flow,
-            "score": score,
-            "is_suspicious": is_suspicious,
-        }
-    )
+    item = {
+        "flow": flow,
+        "score": float(score),
+        "is_suspicious": bool(is_suspicious),
+    }
+    recent_results.appendleft(item)
 
-
-def _meta_to_dict(meta_obj: Any) -> Dict[str, Any]:
-    """
-    Support both Pydantic v2 (model_dump) and v1 (dict).
-    """
-    if hasattr(meta_obj, "model_dump"):
-        return meta_obj.model_dump()
-    return meta_obj.dict()  # type: ignore[no-any-return]
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_broadcast({"type": "event", "data": item}))
+    except RuntimeError:
+        # No running loop (unlikely during normal request handling)
+        pass
 
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
-    device = scorer.device if scorer is not None else "unknown"
+    device = "unknown"
+    if scorer is not None:
+        device = scorer.device
+
     last = recent_results[0] if recent_results else None
+    last_flow = last.get("flow") if last else None
 
     context = {
         "request": request,
         "model_device": device,
         "results": list(recent_results),
-        "last_score": last["score"] if last else None,
-        "last_is_suspicious": last["is_suspicious"] if last else None,
-        "last_flow": last["flow"] if last else None,
+        "last_score": last.get("score") if last else None,
+        "last_is_suspicious": last.get("is_suspicious") if last else None,
+        "last_flow": last_flow,
     }
     return templates.TemplateResponse("dashboard.html", context)
+
+
+@app.get("/api/recent")
+def api_recent(limit: int = Query(default=64, ge=1, le=256)) -> Dict[str, Any]:
+    items = list(recent_results)[:limit]
+    return {"results": items}
+
+
+@app.get("/events")
+async def events() -> StreamingResponse:
+    q: asyncio.Queue = asyncio.Queue(maxsize=256)
+    subscribers.append(q)
+
+    async def gen():
+        try:
+            yield _sse_payload({"type": "connected"})
+            while True:
+                msg = await q.get()
+                yield _sse_payload(msg)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if q in subscribers:
+                subscribers.remove(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.post("/ui/score", response_class=HTMLResponse)
@@ -109,9 +155,10 @@ async def ui_score(
     is_suspicious = score > 0.05
     _log_result(flow, score, is_suspicious)
 
+    device = scorer.device
     context = {
         "request": request,
-        "model_device": scorer.device,
+        "model_device": device,
         "results": list(recent_results),
         "last_score": score,
         "last_is_suspicious": is_suspicious,
@@ -126,7 +173,6 @@ def score_flow(flow: FlowFeatures) -> Dict[str, Any]:
 
     score = scorer.score(flow.features)
     is_suspicious = score > 0.05
-
     _log_result(flow.features, score, is_suspicious)
 
     return {
@@ -140,8 +186,8 @@ def score_flows(batch: FlowBatch) -> Dict[str, Any]:
     assert scorer is not None
 
     scores = scorer.score_batch(batch.flows)
-    results: List[Dict[str, Any]] = []
 
+    results: List[Dict[str, Any]] = []
     for idx, (flow, score) in enumerate(zip(batch.flows, scores)):
         is_suspicious = score > 0.05
         _log_result(flow, score, is_suspicious)
@@ -163,10 +209,8 @@ def ingest(event: IngestEvent) -> Dict[str, Any]:
     score = scorer.score(event.features)
     is_suspicious = score > 0.05
 
-    meta = _meta_to_dict(event.meta)
-
     verdict = threats.update(
-        meta=meta,
+        meta=event.meta.model_dump(),
         features=event.features,
         anomaly_score=score,
     )
@@ -177,32 +221,25 @@ def ingest(event: IngestEvent) -> Dict[str, Any]:
         "threat": None,
     }
 
-    if verdict is not None:
+    if verdict:
         payload["threat"] = {
             "label": verdict.label,
             "confidence": verdict.confidence,
             "reason": verdict.reason,
         }
 
+    # Log to dashboard ring buffer with enrichment for display
     log_item: Dict[str, Any] = dict(event.features)
 
-    src_ip = getattr(event.meta, "src_ip", None)
-    dst_ip = getattr(event.meta, "dst_ip", None)
+    if event.meta.src_ip:
+        log_item["src_ip"] = event.meta.src_ip
+    if event.meta.dst_ip:
+        log_item["dst_ip"] = event.meta.dst_ip
 
-    if src_ip:
-        log_item["src_ip"] = src_ip
-    if dst_ip:
-        log_item["dst_ip"] = dst_ip
-
-    if verdict is not None:
+    if verdict:
         log_item["threat_label"] = verdict.label
         log_item["threat_confidence"] = verdict.confidence
+        log_item["threat_reason"] = verdict.reason
 
     _log_result(log_item, score, is_suspicious)
     return payload
-
-
-@app.get("/api/recent")
-def api_recent(limit: int = Query(default=64, ge=1, le=256)):
-    items = list(recent_results)[:limit]
-    return {"results": items}

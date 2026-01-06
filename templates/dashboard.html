@@ -41,56 +41,52 @@
                             <label for="bytes_in">Bytes in</label>
                             <input type="number" step="1" min="0"
                                    id="bytes_in" name="bytes_in"
-                                   value="{{ last_flow.bytes_in
+                                   value="{{ last_flow.get('bytes_in')
                                             if last_flow else 1500 }}">
                         </div>
                         <div class="form-field">
                             <label for="bytes_out">Bytes out</label>
                             <input type="number" step="1" min="0"
                                    id="bytes_out" name="bytes_out"
-                                   value="{{ last_flow.bytes_out
+                                   value="{{ last_flow.get('bytes_out')
                                             if last_flow else 2000 }}">
                         </div>
                         <div class="form-field">
                             <label for="packets">Packets</label>
                             <input type="number" step="1" min="1"
                                    id="packets" name="packets"
-                                   value="{{ last_flow.packets
+                                   value="{{ last_flow.get('packets')
                                             if last_flow else 25 }}">
                         </div>
                         <div class="form-field">
                             <label for="duration">Duration (s)</label>
                             <input type="number" step="0.01" min="0"
                                    id="duration" name="duration"
-                                   value="{{ last_flow.duration
+                                   value="{{ last_flow.get('duration')
                                             if last_flow else 0.52 }}">
                         </div>
                         <div class="form-field">
                             <label for="src_port">Source port</label>
                             <input type="number" step="1" min="0"
                                    id="src_port" name="src_port"
-                                   value="{{ last_flow.src_port
+                                   value="{{ last_flow.get('src_port')
                                             if last_flow else 443 }}">
                         </div>
                         <div class="form-field">
                             <label for="dst_port">Destination port</label>
                             <input type="number" step="1" min="0"
                                    id="dst_port" name="dst_port"
-                                   value="{{ last_flow.dst_port
+                                   value="{{ last_flow.get('dst_port')
                                             if last_flow else 50321 }}">
                         </div>
                         <div class="form-field">
                             <label for="protocol">Protocol</label>
                             <select id="protocol" name="protocol">
-                                <option value="6"
-                                    {% if not last_flow
-                                          or last_flow.protocol == 6 %}
-                                          selected{% endif %}>
+                                {% set p = last_flow.get('protocol') if last_flow else 6 %}
+                                <option value="6" {% if p == 6 %}selected{% endif %}>
                                     TCP (6)
                                 </option>
-                                <option value="17"
-                                    {% if last_flow and last_flow.protocol == 17 %}
-                                        selected{% endif %}>
+                                <option value="17" {% if p == 17 %}selected{% endif %}>
                                     UDP (17)
                                 </option>
                             </select>
@@ -124,9 +120,9 @@
             <section class="card">
                 <div class="card-header">
                     <div>
-                        <div class="card-title">Recent probes</div>
+                        <div class="card-title">Live feed</div>
                         <div class="card-subtitle">
-                            Latest flows scored via this console
+                            Streaming events scored by AegisNet
                         </div>
                     </div>
                     <div class="card-subtitle">
@@ -157,31 +153,31 @@
                         </thead>
                         <tbody id="logBody">
                         {% for r in results %}
-                        {% set flow = r.get("flow", {}) %}
-                        {% set s = r.get("score", 0.0) %}
-                        {% set suspicious = r.get("is_suspicious", false) %}
-                        {% set label = flow.get("threat_label") %}
-                        {% set conf = flow.get("threat_confidence") %}
+                        {% set flow = r.get('flow', {}) %}
+                        {% set s = r.get('score', 0.0) %}
+                        {% set suspicious = r.get('is_suspicious', false) %}
+                        {% set label = flow.get('threat_label') %}
+                        {% set conf = flow.get('threat_confidence') %}
+
                         <tr>
                             <td>
                                 <span class="
-                                    {% if s > 0.2 %}score-high{% elif s > 0.05 %}
-                                        score-medium{% else %}score-low{% endif %}
+                                    {% if s > 0.2 %}score-high
+                                    {% elif s > 0.05 %}score-medium
+                                    {% else %}score-low{% endif %}
                                 ">
                                     {{ "%.6f" | format(s) }}
                                 </span>
                             </td>
+
                             <td>
                                 {% if suspicious %}
-                                <span class="badge-status badge-suspicious">
-                                    Suspicious
-                                </span>
+                                <span class="badge-status badge-suspicious">Suspicious</span>
                                 {% else %}
-                                <span class="badge-status badge-ok">
-                                    Normal
-                                </span>
+                                <span class="badge-status badge-ok">Normal</span>
                                 {% endif %}
                             </td>
+
                             <td class="small">
                                 {% if label %}
                                     {% set c = conf if conf is not none else 0 %}
@@ -195,6 +191,7 @@
                                     —
                                 {% endif %}
                             </td>
+
                             <td class="small">
                                 {% if conf is not none %}
                                     <span class="conf-pill">{{ "%.2f" | format(conf) }}</span>
@@ -202,38 +199,43 @@
                                     —
                                 {% endif %}
                             </td>
+
                             <td class="small">
-                                {% if flow.get("src_ip") %}
-                                    {{ flow.get("src_ip") }}
+                                {% if flow.get('src_ip') %}
+                                    {{ flow.get('src_ip') }}
                                 {% else %}
-                                    {{ flow.get("src_port", "—") }}
+                                    {{ flow.get('src_port', '—') }}
                                 {% endif %}
                             </td>
+
                             <td class="small">
-                                {% if flow.get("dst_ip") %}
-                                    {{ flow.get("dst_ip") }}
+                                {% if flow.get('dst_ip') %}
+                                    {{ flow.get('dst_ip') }}
                                 {% else %}
-                                    {{ flow.get("dst_port", "—") }}
+                                    {{ flow.get('dst_port', '—') }}
                                 {% endif %}
                             </td>
+
                             <td class="small">
-                                {{ flow.get("bytes_in", "—") }}/{{ flow.get("bytes_out", "—") }}
+                                {{ flow.get('bytes_in', '—') }}/{{ flow.get('bytes_out', '—') }}
                             </td>
-                            <td class="small">{{ flow.get("packets", "—") }}</td>
+
+                            <td class="small">{{ flow.get('packets', '—') }}</td>
+
                             <td class="small">
-                                {% if flow.get("duration") is not none %}
-                                    {{ "%.2f" | format(flow.get("duration")) }}
+                                {% if flow.get('duration') is not none %}
+                                    {{ "%.2f" | format(flow.get('duration')) }}
                                 {% else %}
                                     —
                                 {% endif %}
                             </td>
-                            <td class="small">{{ flow.get("protocol", "—") }}</td>
+
+                            <td class="small">{{ flow.get('protocol', '—') }}</td>
                         </tr>
                         {% else %}
                         <tr>
                             <td colspan="10" class="small">
-                                No flows scored yet. Use the probe panel on the left
-                                to analyse a flow.
+                                No flows scored yet. Start your agent or probe a flow.
                             </td>
                         </tr>
                         {% endfor %}
@@ -242,7 +244,12 @@
                 </div>
 
                 <div style="margin-top:0.8rem; display:flex; gap:0.6rem; justify-content:flex-end;">
-                    <button id="jumpBtn" class="btn-secondary" type="button" style="display:none;">
+                    <button
+                        id="jumpBtn"
+                        class="btn-secondary"
+                        type="button"
+                        style="display:none;"
+                    >
                         Jump to latest
                     </button>
                 </div>
@@ -264,12 +271,10 @@
     const alertBanner = document.getElementById("alertBanner");
     const alertTitle = document.getElementById("alertTitle");
     const alertMeta = document.getElementById("alertMeta");
-
     const jumpBtn = document.getElementById("jumpBtn");
 
-    const POLL_MS = 750;
-    const LIMIT = 64;
     const NEAR_BOTTOM_PX = 40;
+    const MAX_ROWS = 64;
 
     function isNearBottom(el) {
         return (el.scrollHeight - el.scrollTop - el.clientHeight) < NEAR_BOTTOM_PX;
@@ -309,10 +314,10 @@
         return '<span class="badge-status badge-ok">Normal</span>';
     }
 
-    function rowHtml(r) {
-        const flow = r.flow || {};
-        const score = Number(r.score || 0);
-        const suspicious = Boolean(r.is_suspicious);
+    function rowHtml(item) {
+        const flow = item.flow || {};
+        const score = Number(item.score || 0);
+        const suspicious = Boolean(item.is_suspicious);
 
         const label = flow.threat_label || null;
         const conf = flow.threat_confidence;
@@ -321,7 +326,9 @@
         const dst = flow.dst_ip ? escapeHtml(flow.dst_ip) : escapeHtml(flow.dst_port ?? "—");
         const bytes = `${escapeHtml(flow.bytes_in ?? "—")}/${escapeHtml(flow.bytes_out ?? "—")}`;
         const pkts = escapeHtml(flow.packets ?? "—");
-        const dur = (flow.duration === undefined || flow.duration === null) ? "—" : Number(flow.duration).toFixed(2);
+        const dur = (flow.duration === undefined || flow.duration === null)
+            ? "—"
+            : Number(flow.duration).toFixed(2);
         const proto = escapeHtml(flow.protocol ?? "—");
 
         return `
@@ -340,59 +347,45 @@
         `;
     }
 
-    function emptyHtml() {
-        return `
-            <tr>
-                <td colspan="10" class="small">
-                    No flows scored yet. Use the probe panel on the left
-                    to analyse a flow.
-                </td>
-            </tr>
-        `;
+    function trimRows() {
+        while (tbody.children.length > MAX_ROWS) {
+            tbody.removeChild(tbody.lastElementChild);
+        }
     }
 
-    function updateAlertBanner(results) {
+    function updateBannerFromDom() {
+        const rows = tbody.querySelectorAll("tr");
         let alerts = 0;
-        for (const r of results) {
-            const flow = r.flow || {};
-            if (flow.threat_label) alerts += 1;
+
+        for (const tr of rows) {
+            if (tr.querySelector(".threat-chip")) {
+                alerts += 1;
+            }
         }
+
+        entryCountEl.textContent = String(rows.length);
 
         if (alerts > 0) {
             alertBanner.style.display = "flex";
             alertTitle.textContent = `Active alerts: ${alerts}`;
-            alertMeta.textContent = `last ${results.length} events`;
+            alertMeta.textContent = `last ${rows.length} events`;
         } else {
             alertBanner.style.display = "none";
         }
     }
 
-    async function poll() {
-        try {
-            const shouldStick = isNearBottom(wrapper);
+    function prependEvent(item) {
+        const shouldStick = isNearBottom(wrapper);
 
-            const res = await fetch(`/api/recent?limit=${LIMIT}`, {
-                cache: "no-store"
-            });
-            if (!res.ok) return;
+        tbody.insertAdjacentHTML("afterbegin", rowHtml(item));
+        trimRows();
+        updateBannerFromDom();
 
-            const data = await res.json();
-            const results = data.results || [];
-
-            entryCountEl.textContent = String(results.length);
-            updateAlertBanner(results);
-
-            const html = results.length ? results.map(rowHtml).join("") : emptyHtml();
-            tbody.innerHTML = html;
-
-            if (shouldStick) {
-                wrapper.scrollTop = wrapper.scrollHeight;
-                jumpBtn.style.display = "none";
-            } else {
-                jumpBtn.style.display = "inline-flex";
-            }
-        } catch (e) {
-            // Keep UI usable even if API hiccups
+        if (shouldStick) {
+            wrapper.scrollTop = wrapper.scrollHeight;
+            jumpBtn.style.display = "none";
+        } else {
+            jumpBtn.style.display = "inline-flex";
         }
     }
 
@@ -407,9 +400,27 @@
         }
     });
 
-    setInterval(poll, POLL_MS);
-    poll();
+    // Live stream via SSE
+    const es = new EventSource("/events");
+
+    es.onmessage = (evt) => {
+        try {
+            const msg = JSON.parse(evt.data);
+            if (msg.type === "event" && msg.data) {
+                prependEvent(msg.data);
+            }
+        } catch (e) {
+            // ignore malformed messages
+        }
+    };
+
+    es.onerror = () => {
+        // EventSource auto-reconnects when the server comes back
+    };
+
+    updateBannerFromDom();
 })();
 </script>
+
 </body>
 </html>

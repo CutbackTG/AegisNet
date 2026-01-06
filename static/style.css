@@ -400,3 +400,7 @@ th.small {
     max-height: 520px;   /* pick what looks good */
     overflow-y: auto;
 }
+
+.hidden {
+    display: none !important;
+}

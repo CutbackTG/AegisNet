@@ -1,426 +1,413 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>AegisNet · Anomaly Console</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
-<div class="page">
-    <header class="navbar">
-        <div class="nav-title">
-            <div class="logo-dot"></div>
-            <div class="nav-title-text">AegisNet · Anomaly Console</div>
-        </div>
-        <div class="nav-badge">
-            Live model · {{ model_device }}
-        </div>
-    </header>
+    <div class="page">
+        <header class="navbar">
+            <div class="nav-title">
+                <div class="logo-dot"></div>
+                <div class="nav-title-text">AegisNet · Anomaly Console</div>
+            </div>
+            <div class="nav-badge">
+                Live model · {{ model_device }}
+            </div>
+        </header>
 
-    <main class="main">
-        <div class="grid">
-            <!-- Left: input panel -->
-            <section class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Flow probe</div>
-                        <div class="card-subtitle">
-                            Manually probe a single network flow
+        <main class="main">
+            <div class="grid">
+                <!-- Left: input panel -->
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">Flow probe</div>
+                            <div class="card-subtitle">
+                                Manually probe a single network flow
+                            </div>
                         </div>
+                        {% if last_score is not none %}
+                        <div class="badge-score">
+                            Score: {{ "%.6f" | format(last_score) }}
+                        </div>
+                        {% endif %}
                     </div>
+
+                    <form method="post" action="/ui/score">
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label for="bytes_in">Bytes in</label>
+                                <input type="number" step="1" min="0" id="bytes_in" name="bytes_in"
+                                    value="{{ last_flow.bytes_in if last_flow else 1500 }}">
+                            </div>
+                            <div class="form-field">
+                                <label for="bytes_out">Bytes out</label>
+                                <input type="number" step="1" min="0" id="bytes_out" name="bytes_out"
+                                    value="{{ last_flow.bytes_out if last_flow else 2000 }}">
+                            </div>
+                            <div class="form-field">
+                                <label for="packets">Packets</label>
+                                <input type="number" step="1" min="1" id="packets" name="packets"
+                                    value="{{ last_flow.packets if last_flow else 25 }}">
+                            </div>
+                            <div class="form-field">
+                                <label for="duration">Duration (s)</label>
+                                <input type="number" step="0.01" min="0" id="duration" name="duration"
+                                    value="{{ last_flow.duration if last_flow else 0.52 }}">
+                            </div>
+                            <div class="form-field">
+                                <label for="src_port">Source port</label>
+                                <input type="number" step="1" min="0" id="src_port" name="src_port"
+                                    value="{{ last_flow.src_port if last_flow else 443 }}">
+                            </div>
+                            <div class="form-field">
+                                <label for="dst_port">Destination port</label>
+                                <input type="number" step="1" min="0" id="dst_port" name="dst_port"
+                                    value="{{ last_flow.dst_port if last_flow else 50321 }}">
+                            </div>
+                            <div class="form-field">
+                                <label for="protocol">Protocol</label>
+                                <select id="protocol" name="protocol">
+                                    <option value="6" {% if not last_flow or last_flow.protocol==6 %}selected{% endif
+                                        %}>
+                                        TCP (6)
+                                    </option>
+                                    <option value="17" {% if last_flow and last_flow.protocol==17 %}selected{% endif %}>
+                                        UDP (17)
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="reset" class="btn-secondary">Reset</button>
+                            <button type="submit" class="btn-primary">Analyse flow</button>
+                        </div>
+                    </form>
+
                     {% if last_score is not none %}
-                    <div class="badge-score">
-                        Score: {{ "%.6f" | format(last_score) }}
+                    <div style="margin-top:1rem; position:relative; z-index:1;">
+                        {% if last_is_suspicious %}
+                        <span class="badge-status badge-suspicious">
+                            Suspicious · investigation advised
+                        </span>
+                        {% else %}
+                        <span class="badge-status badge-ok">
+                            Within learned baseline
+                        </span>
+                        {% endif %}
                     </div>
                     {% endif %}
-                </div>
+                </section>
 
-                <form method="post" action="/ui/score">
-                    <div class="form-grid">
-                        <div class="form-field">
-                            <label for="bytes_in">Bytes in</label>
-                            <input type="number" step="1" min="0"
-                                   id="bytes_in" name="bytes_in"
-                                   value="{{ last_flow.get('bytes_in')
-                                            if last_flow else 1500 }}">
+                <!-- Right: live feed -->
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">Live feed</div>
+                            <div class="card-subtitle">
+                                Streaming events scored by AegisNet
+                            </div>
                         </div>
-                        <div class="form-field">
-                            <label for="bytes_out">Bytes out</label>
-                            <input type="number" step="1" min="0"
-                                   id="bytes_out" name="bytes_out"
-                                   value="{{ last_flow.get('bytes_out')
-                                            if last_flow else 2000 }}">
-                        </div>
-                        <div class="form-field">
-                            <label for="packets">Packets</label>
-                            <input type="number" step="1" min="1"
-                                   id="packets" name="packets"
-                                   value="{{ last_flow.get('packets')
-                                            if last_flow else 25 }}">
-                        </div>
-                        <div class="form-field">
-                            <label for="duration">Duration (s)</label>
-                            <input type="number" step="0.01" min="0"
-                                   id="duration" name="duration"
-                                   value="{{ last_flow.get('duration')
-                                            if last_flow else 0.52 }}">
-                        </div>
-                        <div class="form-field">
-                            <label for="src_port">Source port</label>
-                            <input type="number" step="1" min="0"
-                                   id="src_port" name="src_port"
-                                   value="{{ last_flow.get('src_port')
-                                            if last_flow else 443 }}">
-                        </div>
-                        <div class="form-field">
-                            <label for="dst_port">Destination port</label>
-                            <input type="number" step="1" min="0"
-                                   id="dst_port" name="dst_port"
-                                   value="{{ last_flow.get('dst_port')
-                                            if last_flow else 50321 }}">
-                        </div>
-                        <div class="form-field">
-                            <label for="protocol">Protocol</label>
-                            <select id="protocol" name="protocol">
-                                {% set p = last_flow.get('protocol') if last_flow else 6 %}
-                                <option value="6" {% if p == 6 %}selected{% endif %}>
-                                    TCP (6)
-                                </option>
-                                <option value="17" {% if p == 17 %}selected{% endif %}>
-                                    UDP (17)
-                                </option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-actions">
-                        <button type="reset"
-                                class="btn-secondary">Reset</button>
-                        <button type="submit"
-                                class="btn-primary">Analyse flow</button>
-                    </div>
-                </form>
-
-                {% if last_score is not none %}
-                <div style="margin-top:1rem; position:relative; z-index:1;">
-                    {% if last_is_suspicious %}
-                    <span class="badge-status badge-suspicious">
-                        Suspicious · investigation advised
-                    </span>
-                    {% else %}
-                    <span class="badge-status badge-ok">
-                        Within learned baseline
-                    </span>
-                    {% endif %}
-                </div>
-                {% endif %}
-            </section>
-
-            <!-- Right: recent results -->
-            <section class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Live feed</div>
                         <div class="card-subtitle">
-                            Streaming events scored by AegisNet
+                            <span id="entries-count">{{ results|length }}</span> entries
                         </div>
                     </div>
-                    <div class="card-subtitle">
-                        <span id="entryCount">{{ results|length }}</span> entries
-                    </div>
-                </div>
 
-                <div id="alertBanner" class="alert-banner" style="display:none;">
-                    <div class="alert-title" id="alertTitle">Active alerts: 0</div>
-                    <div class="alert-meta" id="alertMeta">last 0 events</div>
-                </div>
+                    {% set ns = namespace(alerts=0) %}
+                    {% for r in results %}
+                    {% if r.flow.threat_label %}
+                    {% set ns.alerts = ns.alerts + 1 %}
+                    {% endif %}
+                    {% endfor %}
 
-                <div class="table-wrapper" id="logWrapper">
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>Score</th>
-                            <th>Status</th>
-                            <th>Threat</th>
-                            <th>Conf</th>
-                            <th>Src</th>
-                            <th>Dst</th>
-                            <th>Bytes</th>
-                            <th>Pkts</th>
-                            <th>Dur</th>
-                            <th>Proto</th>
-                        </tr>
-                        </thead>
-                        <tbody id="logBody">
-                        {% for r in results %}
-                        {% set flow = r.get('flow', {}) %}
-                        {% set s = r.get('score', 0.0) %}
-                        {% set suspicious = r.get('is_suspicious', false) %}
-                        {% set label = flow.get('threat_label') %}
-                        {% set conf = flow.get('threat_confidence') %}
+                    {% if ns.alerts > 0 %}
+                    <div id="alert-banner" class="alert-banner">
+                        {% else %}
+                        <div id="alert-banner" class="alert-banner hidden">
+                            {% endif %}
 
-                        <tr>
-                            <td>
-                                <span class="
-                                    {% if s > 0.2 %}score-high
-                                    {% elif s > 0.05 %}score-medium
-                                    {% else %}score-low{% endif %}
-                                ">
-                                    {{ "%.6f" | format(s) }}
-                                </span>
-                            </td>
+                            <div class="alert-title">
+                                Active alerts: <span id="alerts-count">{{ ns.alerts }}</span>
+                            </div>
+                            <div class="alert-meta">
+                                last <span id="window-count">{{ results|length }}</span> events
+                            </div>
+                        </div>
 
-                            <td>
-                                {% if suspicious %}
-                                <span class="badge-status badge-suspicious">Suspicious</span>
-                                {% else %}
-                                <span class="badge-status badge-ok">Normal</span>
-                                {% endif %}
-                            </td>
+                        <div class="table-wrapper" id="feed-scroller">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Score</th>
+                                        <th>Status</th>
+                                        <th>Threat</th>
+                                        <th>Conf</th>
+                                        <th>Src</th>
+                                        <th>Dst</th>
+                                        <th>Bytes</th>
+                                        <th>Pkts</th>
+                                        <th>Dur</th>
+                                        <th>Proto</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="feed-body">
+                                    {% for r in results %}
+                                    <tr>
+                                        {% set s = r.score %}
+                                        <td>
+                                            <span class="
+                                    {% if s > 0.2 %}score-high{% elif s > 0.05 %}score-medium{% else %}score-low{% endif %}
+                                  ">
+                                                {{ "%.6f" | format(s) }}
+                                            </span>
+                                        </td>
 
-                            <td class="small">
-                                {% if label %}
-                                    {% set c = conf if conf is not none else 0 %}
-                                    <span class="threat-chip
+                                        <td>
+                                            {% if r.is_suspicious %}
+                                            <span class="badge-status badge-suspicious">Suspicious</span>
+                                            {% else %}
+                                            <span class="badge-status badge-ok">Normal</span>
+                                            {% endif %}
+                                        </td>
+
+                                        <td class="small">
+                                            {% if r.flow.threat_label %}
+                                            {% set c = r.flow.threat_confidence or 0 %}
+                                            <span class="threat-chip
                                       {% if c >= 0.75 %}threat-high
                                       {% elif c >= 0.55 %}threat-med
                                       {% else %}threat-low{% endif %}">
-                                        {{ label }}
-                                    </span>
-                                {% else %}
-                                    —
-                                {% endif %}
-                            </td>
+                                                {{ r.flow.threat_label }}
+                                            </span>
+                                            {% else %}
+                                            —
+                                            {% endif %}
+                                        </td>
 
-                            <td class="small">
-                                {% if conf is not none %}
-                                    <span class="conf-pill">{{ "%.2f" | format(conf) }}</span>
-                                {% else %}
-                                    —
-                                {% endif %}
-                            </td>
+                                        <td class="small">
+                                            {% if r.flow.threat_confidence is not none %}
+                                            <span class="conf-pill">
+                                                {{ "%.2f" | format(r.flow.threat_confidence) }}
+                                            </span>
+                                            {% else %}
+                                            —
+                                            {% endif %}
+                                        </td>
 
-                            <td class="small">
-                                {% if flow.get('src_ip') %}
-                                    {{ flow.get('src_ip') }}
-                                {% else %}
-                                    {{ flow.get('src_port', '—') }}
-                                {% endif %}
-                            </td>
+                                        <td class="small">
+                                            {% if r.flow.src_ip %}
+                                            {{ r.flow.src_ip }}
+                                            {% else %}
+                                            {{ r.flow.src_port }}
+                                            {% endif %}
+                                        </td>
 
-                            <td class="small">
-                                {% if flow.get('dst_ip') %}
-                                    {{ flow.get('dst_ip') }}
-                                {% else %}
-                                    {{ flow.get('dst_port', '—') }}
-                                {% endif %}
-                            </td>
+                                        <td class="small">
+                                            {% if r.flow.dst_ip %}
+                                            {{ r.flow.dst_ip }}
+                                            {% else %}
+                                            {{ r.flow.dst_port }}
+                                            {% endif %}
+                                        </td>
 
-                            <td class="small">
-                                {{ flow.get('bytes_in', '—') }}/{{ flow.get('bytes_out', '—') }}
-                            </td>
+                                        <td class="small">
+                                            {{ r.flow.bytes_in }}/{{ r.flow.bytes_out }}
+                                        </td>
 
-                            <td class="small">{{ flow.get('packets', '—') }}</td>
+                                        <td class="small">
+                                            {{ r.flow.packets }}
+                                        </td>
 
-                            <td class="small">
-                                {% if flow.get('duration') is not none %}
-                                    {{ "%.2f" | format(flow.get('duration')) }}
-                                {% else %}
-                                    —
-                                {% endif %}
-                            </td>
+                                        <td class="small">
+                                            {{ "%.2f" | format(r.flow.duration) }}
+                                        </td>
 
-                            <td class="small">{{ flow.get('protocol', '—') }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="10" class="small">
-                                No flows scored yet. Start your agent or probe a flow.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                                        <td class="small">
+                                            {{ r.flow.protocol }}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="10" class="small">
+                                            No flows scored yet. Start the agent or use the probe panel.
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                </section>
+            </div>
+        </main>
 
-                <div style="margin-top:0.8rem; display:flex; gap:0.6rem; justify-content:flex-end;">
-                    <button
-                        id="jumpBtn"
-                        class="btn-secondary"
-                        type="button"
-                        style="display:none;"
-                    >
-                        Jump to latest
-                    </button>
-                </div>
-            </section>
-        </div>
-    </main>
+        <footer class="footer">
+            AegisNet · Neural anomaly console · Local demo instance
+        </footer>
+    </div>
 
-    <footer class="footer">
-        AegisNet · Neural anomaly console · Local demo instance
-    </footer>
-</div>
+    <script>
+        (() => {
+            const tbody = document.getElementById("feed-body");
+            const scroller = document.getElementById("feed-scroller");
+            const entriesEl = document.getElementById("entries-count");
+            const alertsEl = document.getElementById("alerts-count");
+            const windowEl = document.getElementById("window-count");
+            const bannerEl = document.getElementById("alert-banner");
+            const MAX_ROWS = 64;
 
-<script>
-(function () {
-    const wrapper = document.getElementById("logWrapper");
-    const tbody = document.getElementById("logBody");
+            if (!tbody) return;
 
-    const entryCountEl = document.getElementById("entryCount");
-    const alertBanner = document.getElementById("alertBanner");
-    const alertTitle = document.getElementById("alertTitle");
-    const alertMeta = document.getElementById("alertMeta");
-    const jumpBtn = document.getElementById("jumpBtn");
+            let autoscroll = true;
 
-    const NEAR_BOTTOM_PX = 40;
-    const MAX_ROWS = 64;
-
-    function isNearBottom(el) {
-        return (el.scrollHeight - el.scrollTop - el.clientHeight) < NEAR_BOTTOM_PX;
-    }
-
-    function escapeHtml(s) {
-        return String(s)
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#039;");
-    }
-
-    function scoreClass(score) {
-        if (score > 0.2) return "score-high";
-        if (score > 0.05) return "score-medium";
-        return "score-low";
-    }
-
-    function threatChip(label, conf) {
-        if (!label) return "—";
-        const c = (conf === undefined || conf === null) ? 0 : Number(conf);
-        const sev = c >= 0.75 ? "threat-high" : c >= 0.55 ? "threat-med" : "threat-low";
-        return `<span class="threat-chip ${sev}">${escapeHtml(label)}</span>`;
-    }
-
-    function confPill(conf) {
-        if (conf === undefined || conf === null) return "—";
-        return `<span class="conf-pill">${Number(conf).toFixed(2)}</span>`;
-    }
-
-    function statusBadge(isSuspicious) {
-        if (isSuspicious) {
-            return '<span class="badge-status badge-suspicious">Suspicious</span>';
-        }
-        return '<span class="badge-status badge-ok">Normal</span>';
-    }
-
-    function rowHtml(item) {
-        const flow = item.flow || {};
-        const score = Number(item.score || 0);
-        const suspicious = Boolean(item.is_suspicious);
-
-        const label = flow.threat_label || null;
-        const conf = flow.threat_confidence;
-
-        const src = flow.src_ip ? escapeHtml(flow.src_ip) : escapeHtml(flow.src_port ?? "—");
-        const dst = flow.dst_ip ? escapeHtml(flow.dst_ip) : escapeHtml(flow.dst_port ?? "—");
-        const bytes = `${escapeHtml(flow.bytes_in ?? "—")}/${escapeHtml(flow.bytes_out ?? "—")}`;
-        const pkts = escapeHtml(flow.packets ?? "—");
-        const dur = (flow.duration === undefined || flow.duration === null)
-            ? "—"
-            : Number(flow.duration).toFixed(2);
-        const proto = escapeHtml(flow.protocol ?? "—");
-
-        return `
-            <tr>
-                <td><span class="${scoreClass(score)}">${score.toFixed(6)}</span></td>
-                <td>${statusBadge(suspicious)}</td>
-                <td class="small">${threatChip(label, conf)}</td>
-                <td class="small">${confPill(conf)}</td>
-                <td class="small">${src}</td>
-                <td class="small">${dst}</td>
-                <td class="small">${bytes}</td>
-                <td class="small">${pkts}</td>
-                <td class="small">${dur}</td>
-                <td class="small">${proto}</td>
-            </tr>
-        `;
-    }
-
-    function trimRows() {
-        while (tbody.children.length > MAX_ROWS) {
-            tbody.removeChild(tbody.lastElementChild);
-        }
-    }
-
-    function updateBannerFromDom() {
-        const rows = tbody.querySelectorAll("tr");
-        let alerts = 0;
-
-        for (const tr of rows) {
-            if (tr.querySelector(".threat-chip")) {
-                alerts += 1;
+            function isNearTop() {
+                if (!scroller) return true;
+                return scroller.scrollTop < 40;
             }
-        }
 
-        entryCountEl.textContent = String(rows.length);
-
-        if (alerts > 0) {
-            alertBanner.style.display = "flex";
-            alertTitle.textContent = `Active alerts: ${alerts}`;
-            alertMeta.textContent = `last ${rows.length} events`;
-        } else {
-            alertBanner.style.display = "none";
-        }
-    }
-
-    function prependEvent(item) {
-        const shouldStick = isNearBottom(wrapper);
-
-        tbody.insertAdjacentHTML("afterbegin", rowHtml(item));
-        trimRows();
-        updateBannerFromDom();
-
-        if (shouldStick) {
-            wrapper.scrollTop = wrapper.scrollHeight;
-            jumpBtn.style.display = "none";
-        } else {
-            jumpBtn.style.display = "inline-flex";
-        }
-    }
-
-    jumpBtn.addEventListener("click", function () {
-        wrapper.scrollTop = wrapper.scrollHeight;
-        jumpBtn.style.display = "none";
-    });
-
-    wrapper.addEventListener("scroll", function () {
-        if (isNearBottom(wrapper)) {
-            jumpBtn.style.display = "none";
-        }
-    });
-
-    // Live stream via SSE
-    const es = new EventSource("/events");
-
-    es.onmessage = (evt) => {
-        try {
-            const msg = JSON.parse(evt.data);
-            if (msg.type === "event" && msg.data) {
-                prependEvent(msg.data);
+            if (scroller) {
+                scroller.addEventListener("scroll", () => {
+                    autoscroll = isNearTop();
+                });
             }
-        } catch (e) {
-            // ignore malformed messages
-        }
-    };
 
-    es.onerror = () => {
-        // EventSource auto-reconnects when the server comes back
-    };
+            function escapeHtml(v) {
+                return String(v)
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll('"', "&quot;")
+                    .replaceAll("'", "&#039;");
+            }
 
-    updateBannerFromDom();
-})();
-</script>
+            function scoreClass(s) {
+                if (s > 0.2) return "score-high";
+                if (s > 0.05) return "score-medium";
+                return "score-low";
+            }
+
+            function fmt(n, d = 2) {
+                const x = Number(n);
+                if (!Number.isFinite(x)) return "—";
+                return x.toFixed(d);
+            }
+
+            function updateBanner() {
+                const rows = Array.from(tbody.rows);
+                let alerts = 0;
+
+                for (const row of rows) {
+                    const threatCell = row.cells[2];
+                    if (threatCell && threatCell.textContent.trim() !== "—") {
+                        alerts += 1;
+                    }
+                }
+
+                if (alertsEl) alertsEl.textContent = String(alerts);
+                if (windowEl) windowEl.textContent = String(rows.length);
+
+                if (bannerEl) {
+                    bannerEl.style.display = alerts > 0 ? "" : "none";
+                }
+            }
+
+            function buildRow(r) {
+                const s = Number(r.score || 0);
+                const f = r.flow || {};
+                const suspicious = !!r.is_suspicious;
+
+                const threatLabel = f.threat_label || null;
+                const threatConf = (
+                    f.threat_confidence !== undefined &&
+                    f.threat_confidence !== null
+                ) ? Number(f.threat_confidence) : null;
+
+                let threatChip = "—";
+                let confPill = "—";
+
+                if (threatLabel) {
+                    const c = Number.isFinite(threatConf) ? threatConf : 0;
+                    let cls = "threat-low";
+                    if (c >= 0.75) cls = "threat-high";
+                    else if (c >= 0.55) cls = "threat-med";
+
+                    threatChip =
+                        `<span class="threat-chip ${cls}">` +
+                        `${escapeHtml(threatLabel)}</span>`;
+                }
+
+                if (Number.isFinite(threatConf)) {
+                    confPill = `<span class="conf-pill">${fmt(threatConf, 2)}</span>`;
+                }
+
+                const src = f.src_ip ? escapeHtml(f.src_ip) : escapeHtml(f.src_port ?? "—");
+                const dst = f.dst_ip ? escapeHtml(f.dst_ip) : escapeHtml(f.dst_port ?? "—");
+                const bytes = `${fmt(f.bytes_in, 0)}/${fmt(f.bytes_out, 0)}`;
+
+                return `
+      <tr>
+        <td><span class="${scoreClass(s)}">${fmt(s, 6)}</span></td>
+        <td>
+          <span class="badge-status ${suspicious ? "badge-suspicious" : "badge-ok"}">
+            ${suspicious ? "Suspicious" : "Normal"}
+          </span>
+        </td>
+        <td class="small">${threatChip}</td>
+        <td class="small">${confPill}</td>
+        <td class="small">${src}</td>
+        <td class="small">${dst}</td>
+        <td class="small">${escapeHtml(bytes)}</td>
+        <td class="small">${escapeHtml(f.packets ?? "—")}</td>
+        <td class="small">${fmt(f.duration, 2)}</td>
+        <td class="small">${escapeHtml(f.protocol ?? "—")}</td>
+      </tr>
+    `;
+            }
+
+            function setSnapshot(items) {
+                tbody.innerHTML = items.map(buildRow).join("");
+                if (entriesEl) entriesEl.textContent = String(items.length);
+                updateBanner();
+                if (scroller && autoscroll) scroller.scrollTop = 0;
+            }
+
+            function addUpdate(item) {
+                tbody.insertAdjacentHTML("afterbegin", buildRow(item));
+
+                while (tbody.rows.length > MAX_ROWS) {
+                    tbody.deleteRow(tbody.rows.length - 1);
+                }
+
+                if (entriesEl) entriesEl.textContent = String(tbody.rows.length);
+                updateBanner();
+
+                if (scroller && autoscroll) {
+                    scroller.scrollTop = 0;
+                }
+            }
+
+            const es = new EventSource("/live");
+
+            es.addEventListener("snapshot", (ev) => {
+                try {
+                    const items = JSON.parse(ev.data);
+                    if (Array.isArray(items)) setSnapshot(items);
+                } catch { }
+            });
+
+            es.addEventListener("update", (ev) => {
+                try {
+                    const item = JSON.parse(ev.data);
+                    addUpdate(item);
+                } catch { }
+            });
+        })();
+    </script>
 
 </body>
+
 </html>

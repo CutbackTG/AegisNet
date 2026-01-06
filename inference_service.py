@@ -42,7 +42,11 @@ def load_model() -> None:
     print("[OK] Model loaded")
 
 
-def _log_result(flow: Dict[str, Any], score: float, is_suspicious: bool) -> None:
+def _log_result(
+    flow: Dict[str, Any],
+    score: float,
+    is_suspicious: bool,
+) -> None:
     recent_results.appendleft(
         {
             "flow": flow,
